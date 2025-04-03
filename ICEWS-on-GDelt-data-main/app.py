@@ -4,7 +4,9 @@ import streamlit as st
 st.set_page_config(
     page_title="GDELT Data Visualization with ICEWS Explorer",
     page_icon="📊",
-    layout="centered"  # Changed to centered for better compatibility
+    layout="centered",  # Changed to centered for better compatibility
+    # Add this to allow HTML rendering for clickable links
+    initial_sidebar_state="expanded"
 )
 
 # Import basic packages first
@@ -26,6 +28,8 @@ if 'data' not in st.session_state:
     st.session_state.data = None
 if 'last_update' not in st.session_state:
     st.session_state.last_update = None
+if 'selected_event' not in st.session_state:
+    st.session_state.selected_event = None
 
 # Title and description
 st.title("GDELT Data Visualization with ICEWS Explorer")
@@ -148,7 +152,7 @@ if st.session_state.data is not None and not st.session_state.data.empty:
                 )
                 map_data = map_data[(map_data['intensity'] >= intensity_min) & (map_data['intensity'] <= intensity_max)]
             
-            # Create the map
+            # Create the map with horizontal legend placement
             fig = px.scatter_geo(
                 map_data,
                 lat='latitude',
@@ -156,12 +160,25 @@ if st.session_state.data is not None and not st.session_state.data.empty:
                 color='event_type',
                 hover_name='event_type',
                 hover_data=['source_name', 'target_name', 'intensity', 'location'],
+                custom_data=['event_id'],  # Include event_id in custom data
                 projection='natural earth',
                 title="Geographic Distribution of Events"
             )
             
+            # Place legend horizontally below the map
             fig.update_layout(
                 height=600,
+                legend=dict(
+                    orientation="h",  # horizontal orientation
+                    yanchor="top",
+                    y=-0.1,  # Position below the map
+                    xanchor="center",
+                    x=0.5,  # Center horizontally
+                    title=dict(text="Event Types", side="top"),
+                    font=dict(size=12),
+                    traceorder="normal"
+                ),
+                margin=dict(l=0, r=0, t=40, b=100),  # Add bottom margin for legend
                 geo=dict(
                     showland=True,
                     landcolor="rgb(212, 212, 212)",
@@ -174,11 +191,91 @@ if st.session_state.data is not None and not st.session_state.data.empty:
                     showframe=False,
                     showcoastlines=True,
                     coastlinecolor="rgb(255, 255, 255)",
-                    projection_type="equirectangular"
+                    projection_type="equirectangular",                    
+                    lonaxis=dict(range=[-180, 180]),
+                    lataxis=dict(range=[-90, 90])
                 )
             )
             
+            # Adjust marker size for better visibility
+            fig.update_traces(
+                marker=dict(size=10, opacity=0.7, line=dict(width=1, color='white'))
+            )
+            
+            # Display the map
             st.plotly_chart(fig, use_container_width=True)
+            
+            # Simplified approach: Use a selection widget to choose coordinates
+            st.subheader("Select a Location to View Source URL")
+            
+            # Create location options with more descriptive labels
+            location_options = []
+            for i, row in map_data.reset_index().iterrows():
+                # Create a descriptive label
+                label = f"{row.event_type}: {row.source_name} → {row.target_name} in {row.location}"
+                if len(label) > 80:  # Truncate if too long
+                    label = label[:77] + "..."
+                location_options.append({"label": label, "value": i})
+            
+            # Create selectbox with descriptive format function
+            selected_location_index = st.selectbox(
+                "Choose an event location:",
+                options=range(len(location_options)),
+                format_func=lambda x: location_options[x]["label"] if x < len(location_options) else "Select a location"
+            )
+            
+            # Display the selected location's URL in a highlighted box
+            if selected_location_index is not None and selected_location_index < len(map_data):
+                selected_location = map_data.iloc[selected_location_index]
+                
+                # Display event details first
+                st.markdown("### Selected Event Details")
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown(f"**Event Type:** {selected_location['event_type']}")
+                    st.markdown(f"**Location:** {selected_location['location']}")
+                    st.markdown(f"**Country:** {selected_location['country']}")
+                
+                with col2:
+                    st.markdown(f"**Source:** {selected_location['source_name']}")
+                    st.markdown(f"**Target:** {selected_location['target_name']}")
+                    st.markdown(f"**Date:** {selected_location['date'].strftime('%Y-%m-%d %H:%M:%S')}")
+                
+                # Display source URL in a highlighted box
+                st.markdown("### Source URL")
+                if pd.notna(selected_location['source_url']) and selected_location['source_url']:
+                    url = selected_location['source_url']
+                    st.markdown(
+                        f"""
+                        <div style="padding: 15px; background-color: #f0f2f6; border-radius: 5px; margin: 10px 0; border: 1px solid #e0e0e0;">
+                            <a href="{url}" target="_blank" style="word-break: break-all; color: #1E88E5; text-decoration: underline; font-size: 16px;">
+                                {url}
+                            </a>
+                        </div>
+                        """, 
+                        unsafe_allow_html=True
+                    )
+                    # Add an explicit button for opening the URL in a new tab
+                    st.markdown(
+                        f"""
+                        <div style="text-align: center; margin: 10px 0;">
+                            <a href="{url}" target="_blank" style="display: inline-block; padding: 10px 20px; background-color: #1E88E5; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;">
+                                Open Source URL in New Tab
+                            </a>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+                else:
+                    st.markdown(
+                        """
+                        <div style="padding: 15px; background-color: #f0f2f6; border-radius: 5px; margin: 10px 0; border: 1px solid #e0e0e0;">
+                            <span style="color: #757575; font-style: italic;">No source URL available for this event</span>
+                        </div>
+                        """, 
+                        unsafe_allow_html=True
+                    )
             
             # Country distribution
             st.subheader("Top Countries")
@@ -237,17 +334,59 @@ if st.session_state.data is not None and not st.session_state.data.empty:
             filtered_data = filtered_data[search_mask]
             st.write(f"Found {len(filtered_data)} events matching '{search_term}'")
         
-        # Display the data with pagination
+        # Display the data with pagination and clickable source URLs
         if not filtered_data.empty:
             # Select which columns to display
-            cols_to_display = ['date', 'event_type', 'source_name', 'target_name', 
-                             'country', 'location', 'intensity', 'tone']
-            display_data = filtered_data[cols_to_display].copy()
+            display_data = filtered_data[['date', 'event_type', 'source_name', 'target_name', 
+                                        'country', 'location', 'intensity', 'tone', 'source_url']].copy()
             
             # Format the date column for better readability
             display_data['date'] = display_data['date'].dt.strftime('%Y-%m-%d %H:%M:%S')
             
-            st.dataframe(display_data, use_container_width=True)
+            # Make the source_url clickable
+            # We need to create a new column with formatted HTML
+            display_data['source_url_link'] = display_data['source_url'].apply(
+                lambda x: f'<a href="{x}" target="_blank">View Source</a>' if pd.notna(x) and x else 'No URL'
+            )
+            
+            # Display the data, excluding the raw URL column (we'll show the HTML links instead)
+            final_display_data = display_data.drop(columns=['source_url'])
+            
+            # Create a column with clickable links using HTML
+            st.write("### Event Data")
+            
+            
+            # Convert source_url_link to HTML-rendered columns
+            html_table = "<table style='width:100%'><tr>"
+            
+            # Header row
+            for col in final_display_data.columns:
+                if col != 'source_url_link':
+                    display_name = col.replace('_', ' ').title()
+                    html_table += f"<th style='text-align:left;padding:8px;border-bottom:1px solid #ddd;'>{display_name}</th>"
+                else:
+                    html_table += f"<th style='text-align:left;padding:8px;border-bottom:1px solid #ddd;'>Source URL</th>"
+            
+            html_table += "</tr>"
+            
+            # Data rows
+            for _, row in final_display_data.iterrows():
+                html_table += "<tr>"
+                for col in final_display_data.columns:
+                    if col != 'source_url_link':
+                        cell_value = str(row[col]) if pd.notna(row[col]) else ""
+                        html_table += f"<td style='text-align:left;padding:8px;border-bottom:1px solid #ddd;'>{cell_value}</td>"
+                    else:
+                        html_table += f"<td style='text-align:left;padding:8px;border-bottom:1px solid #ddd;'>{row[col]}</td>"
+                html_table += "</tr>"
+            
+            html_table += "</table>"
+            st.markdown(html_table, unsafe_allow_html=True)
+            
+            # Also show the regular dataframe for sorting/filtering (without the HTML column)
+            st.write("### Data Table (Sortable)")
+            regular_display = display_data.drop(columns=['source_url_link'])
+            st.dataframe(regular_display, use_container_width=True)
             
             # Option to download the filtered data
             csv = filtered_data.to_csv(index=False)
