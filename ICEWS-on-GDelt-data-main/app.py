@@ -152,15 +152,27 @@ if st.session_state.data is not None and not st.session_state.data.empty:
                 )
                 map_data = map_data[(map_data['intensity'] >= intensity_min) & (map_data['intensity'] <= intensity_max)]
             
-            # Create the map with horizontal legend placement
+            # Create a new column for displaying "Source Link" instead of the full URL
+            map_data['source_link'] = "Source Link"
+            
+            # Create the scatter_geo plot 
             fig = px.scatter_geo(
                 map_data,
                 lat='latitude',
                 lon='longitude',
                 color='event_type',
                 hover_name='event_type',
-                hover_data=['source_name', 'target_name', 'intensity', 'location'],
-                custom_data=['event_id'],  # Include event_id in custom data
+                hover_data={
+                    'source_name': True,
+                    'target_name': True, 
+                    'intensity': True, 
+                    'location': True,
+                    'source_link': True,  # Display "Source Link" text
+                    'source_url': False,  # Hide the actual URL
+                    'latitude': False,    # Hide latitude
+                    'longitude': False    # Hide longitude
+                },
+                custom_data=['event_id', 'source_url'],  # Keep source_url in custom_data for reference
                 projection='natural earth',
                 title="Geographic Distribution of Events"
             )
@@ -261,7 +273,7 @@ if st.session_state.data is not None and not st.session_state.data.empty:
                         f"""
                         <div style="text-align: center; margin: 10px 0;">
                             <a href="{url}" target="_blank" style="display: inline-block; padding: 10px 20px; background-color: #1E88E5; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;">
-                                Open Source URL in New Tab
+                                Open Source Link in New Tab
                             </a>
                         </div>
                         """,
@@ -346,7 +358,7 @@ if st.session_state.data is not None and not st.session_state.data.empty:
             # Make the source_url clickable
             # We need to create a new column with formatted HTML
             display_data['source_url_link'] = display_data['source_url'].apply(
-                lambda x: f'<a href="{x}" target="_blank">View Source</a>' if pd.notna(x) and x else 'No URL'
+                lambda x: f'<a href="{x}" target="_blank">Source Link</a>' if pd.notna(x) and x else 'No URL'
             )
             
             # Display the data, excluding the raw URL column (we'll show the HTML links instead)
